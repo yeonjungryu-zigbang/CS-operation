@@ -10,7 +10,7 @@ from claude_client import answer_cs_question
 from pricing_engine import answer_pricing_question
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Slack Bolt 앱 초기화
