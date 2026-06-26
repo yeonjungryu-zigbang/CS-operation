@@ -5,8 +5,8 @@ from slack_bolt.adapter.flask import SlackRequestHandler
 from flask import Flask, request
 from dotenv import load_dotenv
 
-from sheets import get_all_data_as_text, get_default_sheet_data_as_text
-from claude_client import answer_cs_question
+from sheets import get_all_data_as_text, get_default_sheet_data_as_text, get_pricing_data_as_text
+from claude_client import answer_cs_question, answer_pricing_question
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +20,19 @@ bolt_app = App(
 
 # 데이터 캐시 (매번 API 호출 방지)
 _sheet_cache: dict = {"data": None}
+_pricing_cache: dict = {"data": None}
+
+# 가격 조회 관련 키워드
+_PRICING_KEYWORDS = (
+    "사입가", "purchase price", "출고가", "공헌이익", "공헌이익율",
+    "환율", "모델", "model",
+)
+
+
+def _is_pricing_question(text: str) -> bool:
+    """가격 조회 질문 여부 판단"""
+    lower = text.lower()
+    return any(kw in lower for kw in _PRICING_KEYWORDS)
 
 
 def get_sheet_data_cached() -> str:
@@ -35,9 +48,23 @@ def get_sheet_data_cached() -> str:
     return _sheet_cache["data"]
 
 
+def get_pricing_data_cached() -> str:
+    """가격 시트 데이터 캐시 반환 (없으면 새로 조회)"""
+    if _pricing_cache["data"] is None:
+        logger.info("가격 Sheets 데이터 로딩 중...")
+        try:
+            _pricing_cache["data"] = get_pricing_data_as_text()
+            logger.info("가격 Sheets 데이터 로딩 완료")
+        except Exception as e:
+            logger.error(f"가격 Sheets 데이터 로딩 실패: {e}")
+            return f"가격 데이터 로딩 실패: {e}"
+    return _pricing_cache["data"]
+
+
 def refresh_cache():
     """캐시 초기화 (데이터 갱신 시 사용)"""
     _sheet_cache["data"] = None
+    _pricing_cache["data"] = None
     logger.info("캐시가 초기화되었습니다.")
 
 
@@ -62,8 +89,12 @@ def handle_mention(event, say, client):
     say(text=f"<@{user}> 데이터를 조회 중입니다... :hourglass_flowing_sand:", thread_ts=thread_ts)
 
     try:
-        sheet_data = get_sheet_data_cached()
-        answer = answer_cs_question(question, sheet_data)
+        if _is_pricing_question(question):
+            sheet_data = get_pricing_data_cached()
+            answer = answer_pricing_question(question, sheet_data)
+        else:
+            sheet_data = get_sheet_data_cached()
+            answer = answer_cs_question(question, sheet_data)
         say(text=f"<@{user}>\n{answer}", thread_ts=thread_ts)
     except Exception as e:
         logger.error(f"오류 발생: {e}", exc_info=True)
@@ -96,8 +127,12 @@ def handle_dm(event, say, client):
     say(f"데이터를 조회 중입니다... :hourglass_flowing_sand:")
 
     try:
-        sheet_data = get_sheet_data_cached()
-        answer = answer_cs_question(question, sheet_data)
+        if _is_pricing_question(question):
+            sheet_data = get_pricing_data_cached()
+            answer = answer_pricing_question(question, sheet_data)
+        else:
+            sheet_data = get_sheet_data_cached()
+            answer = answer_cs_question(question, sheet_data)
         say(answer)
     except Exception as e:
         logger.error(f"오류 발생: {e}", exc_info=True)

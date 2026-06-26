@@ -4,6 +4,8 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 SPREADSHEET_ID = "1FQyGMK9ac8SUYdUxIjEMx_DTg45JnGbCyg9uhHUlpN0"
+PRICING_SPREADSHEET_ID = "1vRHJoIBr8xHafpSwyVwj9htIXHRlw38N"
+PRICING_SHEET_GID = 32118780
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
@@ -66,6 +68,35 @@ def get_all_data_as_text() -> str:
         except Exception as e:
             parts.append(f"\n### 시트: {sheet['title']} - 읽기 실패: {e} ###")
     return "\n\n".join(parts)
+
+
+def get_pricing_data_as_text() -> str:
+    """가격 스프레드시트(gid=32118780) 데이터를 텍스트로 반환"""
+    service = _get_service()
+
+    # gid로 시트명 찾기
+    meta = service.spreadsheets().get(spreadsheetId=PRICING_SPREADSHEET_ID).execute()
+    sheet_name = None
+    for s in meta.get("sheets", []):
+        if s["properties"]["sheetId"] == PRICING_SHEET_GID:
+            sheet_name = s["properties"]["title"]
+            break
+
+    range_name = f"'{sheet_name}'!A1:ZZ" if sheet_name else "A1:ZZ"
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=PRICING_SPREADSHEET_ID, range=range_name)
+        .execute()
+    )
+    rows = result.get("values", [])
+    if not rows:
+        return "가격 데이터가 없습니다."
+
+    lines = [f"### 시트: {sheet_name} ###"]
+    for row in rows:
+        lines.append("\t".join(str(cell) for cell in row))
+    return "\n".join(lines)
 
 
 def get_default_sheet_data_as_text() -> str:
