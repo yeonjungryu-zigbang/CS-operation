@@ -70,6 +70,27 @@ def get_all_data_as_text() -> str:
     return "\n\n".join(parts)
 
 
+def get_pricing_rows() -> list:
+    """가격 스프레드시트 raw rows 반환 (규칙 기반 엔진용)"""
+    service = _get_service()
+
+    meta = service.spreadsheets().get(spreadsheetId=PRICING_SPREADSHEET_ID).execute()
+    sheet_name = None
+    for s in meta.get("sheets", []):
+        if s["properties"]["sheetId"] == PRICING_SHEET_GID:
+            sheet_name = s["properties"]["title"]
+            break
+
+    range_name = f"'{sheet_name}'!A1:AV" if sheet_name else "A1:AV"
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=PRICING_SPREADSHEET_ID, range=range_name)
+        .execute()
+    )
+    return result.get("values", [])
+
+
 def get_pricing_data_as_text() -> str:
     """가격 스프레드시트(gid=32118780) 데이터를 텍스트로 반환"""
     service = _get_service()

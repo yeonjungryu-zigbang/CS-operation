@@ -5,8 +5,9 @@ from slack_bolt.adapter.flask import SlackRequestHandler
 from flask import Flask, request
 from dotenv import load_dotenv
 
-from sheets import get_all_data_as_text, get_default_sheet_data_as_text, get_pricing_data_as_text
-from claude_client import answer_cs_question, answer_pricing_question
+from sheets import get_all_data_as_text, get_default_sheet_data_as_text, get_pricing_rows
+from claude_client import answer_cs_question
+from pricing_engine import answer_pricing_question
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -48,16 +49,16 @@ def get_sheet_data_cached() -> str:
     return _sheet_cache["data"]
 
 
-def get_pricing_data_cached() -> str:
-    """가격 시트 데이터 캐시 반환 (없으면 새로 조회)"""
+def get_pricing_data_cached() -> list:
+    """가격 시트 raw rows 캐시 반환 (없으면 새로 조회)"""
     if _pricing_cache["data"] is None:
         logger.info("가격 Sheets 데이터 로딩 중...")
         try:
-            _pricing_cache["data"] = get_pricing_data_as_text()
+            _pricing_cache["data"] = get_pricing_rows()
             logger.info("가격 Sheets 데이터 로딩 완료")
         except Exception as e:
             logger.error(f"가격 Sheets 데이터 로딩 실패: {e}")
-            return f"가격 데이터 로딩 실패: {e}"
+            return []
     return _pricing_cache["data"]
 
 
