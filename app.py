@@ -102,15 +102,24 @@ def handle_mention(event, say, client):
         say(text=f"<@{user}> 오류가 발생했습니다: {e}", thread_ts=thread_ts)
 
 
+# ─── 모든 이벤트 수신 확인용 (디버그) ──────────────────────────
+@bolt_app.event({"type": "message"})
+def handle_all_messages(event, logger):
+    logger.info(f"[DEBUG] 메시지 수신: channel_type={event.get('channel_type')}, subtype={event.get('subtype')}, text={event.get('text','')[:50]}")
+
+
 # ─── DM 메시지 처리 ─────────────────────────────────────────────
 @bolt_app.event("message")
 def handle_dm(event, say, client):
     """DM으로 직접 질문 처리"""
+    logger.info(f"[DM] 핸들러 진입: channel_type={event.get('channel_type')}")
     # 봇 메시지나 멘션 이벤트 중복 처리 방지
     if event.get("subtype") or event.get("bot_id"):
+        logger.info("[DM] subtype/bot_id로 무시됨")
         return
     channel_type = event.get("channel_type")
     if channel_type != "im":
+        logger.info(f"[DM] channel_type={channel_type} 이므로 무시됨")
         return
 
     user = event.get("user")
