@@ -135,7 +135,7 @@ def handle_dm(message, say):
                 return
             lines = [f"총 {len(rows)}행 로드됨", ""]
             for i, row in enumerate(rows[:6]):
-                lines.append(f"Row{i}: {row[:8]}")
+                lines.append(f"Row{i}: {row[:20]}")
             say("```\n" + "\n".join(lines) + "\n```")
         except Exception as e:
             say(f"디버그 오류: {e}")
