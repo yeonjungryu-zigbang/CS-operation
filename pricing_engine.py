@@ -55,6 +55,20 @@ def _get_base_rates(rows: list) -> dict:
     return rates
 
 
+def _to_krw(amount: float, currency: str, rates: dict, override_rate: Optional[float] = None) -> float:
+    """금액을 KRW로 변환"""
+    currency = currency.strip().upper()
+    if currency == 'KRW':
+        return amount
+    if currency == 'USD':
+        rate = override_rate if override_rate else rates['USD']
+        return amount * rate
+    if currency == 'CNY':
+        rate = override_rate if override_rate else rates['CNY']
+        return amount * rate
+    return amount
+
+
 def _find_model(rows: list, model_name: str) -> Optional[list]:
     query = re.sub(r'[\s\-_]', '', model_name).upper()
     for row in rows[3:]:
@@ -107,43 +121,61 @@ def answer_pricing_question(question: str, rows: list) -> str:
     model_code = row[COL_MODEL]
     purchase = _to_number(row[COL_PURCHASE]) if len(row) > COL_PURCHASE else None
     sale = _to_number(row[COL_SALE]) if len(row) > COL_SALE else None
-    sale_currency = row[7] if len(row) > 7 else 'KRW'
-    purchase_currency = row[9] if len(row) > 9 else 'KRW'
+    sale_currency = (row[7] if len(row) > 7 else 'KRW').strip().upper()
+    purchase_currency = (row[9] if len(row) > 9 else 'KRW').strip().upper()
 
     new_rate = parsed['exchange_rate']
-    base_usd = _get_base_rates(rows)['USD']
+    rates = _get_base_rates(rows)
 
     if parsed['query_type'] == '사입가':
         if purchase is None:
             return f"*{model_code}* 사입가 데이터가 없습니다."
-        if new_rate:
-            foreign = purchase / base_usd
-            converted = foreign * new_rate
+        p_krw = _to_krw(purchase, purchase_currency, rates, new_rate if purchase_currency != 'KRW' else None)
+        if purchase_currency != 'KRW':
+            rate_used = new_rate if new_rate else rates.get(purchase_currency, 1)
+            header = f"*{model_code}* 사입가"
+            if new_rate:
+                header += f"  (환율 {_fmt(new_rate)}원 적용)"
             return (
-                f"*{model_code}* 사입가  (환율 {_fmt(new_rate)}원 적용)\n\n"
-                f"• 기준 사입가: {_fmt(purchase)}{purchase_currency}\n"
-                f"• 재환산 사입가: *{_fmt(converted)}원*  (${foreign:,.1f} × {_fmt(new_rate)})"
+                f"{header}\n\n"
+                f"• 원가: {purchase_currency} {_fmt(purchase)}\n"
+                f"• 적용 환율: {_fmt(rate_used)}원\n"
+                f"• 사입가(KRW): *{_fmt(p_krw)}원*"
             )
-        return f"*{model_code}* 사입가\n\n• *{_fmt(purchase)}{purchase_currency}*"
+        return f"*{model_code}* 사입가\n\n• *{_fmt(purchase)}원*"
 
     if parsed['query_type'] == '출고가':
         if sale is None:
             return f"*{model_code}* 출고가 데이터가 없습니다."
-        return f"*{model_code}* 출고가\n\n• *{_fmt(sale)}{sale_currency}*"
+        s_krw = _to_krw(sale, sale_currency, rates)
+        if sale_currency != 'KRW':
+            return (
+                f"*{model_code}* 출고가\n\n"
+                f"• {sale_currency} {_fmt(sale)}\n"
+                f"• KRW: *{_fmt(s_krw)}원*"
+            )
+        return f"*{model_code}* 출고가\n\n• *{_fmt(sale)}원*"
 
     if parsed['query_type'] == '공헌이익':
-        if purchase is None or sale is None or sale == 0:
+        if purchase is None or sale is None:
             return f"*{model_code}* 가격 데이터가 부족합니다."
-        p_krw = (purchase / base_usd) * new_rate if new_rate else purchase
-        margin = sale - p_krw
-        margin_rate = (margin / sale) * 100
+        p_krw = _to_krw(purchase, purchase_currency, rates, new_rate if purchase_currency != 'KRW' else None)
+        s_krw = _to_krw(sale, sale_currency, rates)
+        if s_krw == 0:
+            return f"*{model_code}* 출고가가 0입니다."
+        margin = s_krw - p_krw
+        margin_rate = (margin / s_krw) * 100
         header = f"*{model_code}* 공헌이익"
         if new_rate:
             header += f"  (환율 {_fmt(new_rate)}원 적용)"
+        rate_info = ""
+        if purchase_currency != 'KRW':
+            rate_used = new_rate if new_rate else rates.get(purchase_currency, 1)
+            rate_info = f"\n• 적용 환율: {_fmt(rate_used)}원 ({purchase_currency})"
         return (
             f"{header}\n\n"
-            f"• 출고가: {_fmt(sale)}{sale_currency}\n"
-            f"• 사입가: {_fmt(p_krw)}원\n"
+            f"• 출고가: {_fmt(s_krw)}원\n"
+            f"• 사입가: {_fmt(p_krw)}원{rate_info}\n"
             f"• 공헌이익: *{_fmt(margin)}원*\n"
             f"• 공헌이익율: *{margin_rate:.1f}%*"
         )
