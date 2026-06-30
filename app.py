@@ -127,14 +127,18 @@ def handle_dm(message, say):
         return
 
     if question == "!debug":
-        rows = get_pricing_data_cached()
-        if not rows:
-            say("데이터가 없습니다.")
-            return
-        lines = [f"총 {len(rows)}행 로드됨", ""]
-        for i, row in enumerate(rows[:6]):
-            lines.append(f"Row{i}: {row[:6]}")
-        say("```\n" + "\n".join(lines) + "\n```")
+        try:
+            from sheets import get_pricing_rows
+            rows = get_pricing_rows()
+            if not rows:
+                say("시트에서 데이터를 가져왔으나 비어있습니다.")
+                return
+            lines = [f"총 {len(rows)}행 로드됨", ""]
+            for i, row in enumerate(rows[:6]):
+                lines.append(f"Row{i}: {row[:8]}")
+            say("```\n" + "\n".join(lines) + "\n```")
+        except Exception as e:
+            say(f"디버그 오류: {e}")
         return
 
     say(f"데이터를 조회 중입니다... :hourglass_flowing_sand:")
