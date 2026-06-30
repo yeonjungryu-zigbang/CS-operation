@@ -4,7 +4,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 SPREADSHEET_ID = "1FQyGMK9ac8SUYdUxIjEMx_DTg45JnGbCyg9uhHUlpN0"
-PRICING_SPREADSHEET_ID = "1vRHJoIBr8xHafpSwyVwj9htIXHRlw38N"
+PRICING_SPREADSHEET_ID = "1O5jIanN0Yn5LMt2xziNnYVPSTyn4W2H4FPmQVkODjok"
 PRICING_SHEET_GID = 32118780
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
