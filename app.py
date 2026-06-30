@@ -126,6 +126,17 @@ def handle_dm(message, say):
         say("데이터 캐시를 초기화했습니다. 다음 질문 시 최신 데이터를 불러옵니다. :recycle:")
         return
 
+    if question == "!debug":
+        rows = get_pricing_data_cached()
+        if not rows:
+            say("데이터가 없습니다.")
+            return
+        lines = [f"총 {len(rows)}행 로드됨", ""]
+        for i, row in enumerate(rows[:6]):
+            lines.append(f"Row{i}: {row[:6]}")
+        say("```\n" + "\n".join(lines) + "\n```")
+        return
+
     say(f"데이터를 조회 중입니다... :hourglass_flowing_sand:")
 
     try:
