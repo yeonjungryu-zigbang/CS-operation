@@ -126,6 +126,33 @@ def handle_dm(message, say):
         say("데이터 캐시를 초기화했습니다. 다음 질문 시 최신 데이터를 불러옵니다. :recycle:")
         return
 
+    if question.startswith("!model "):
+        model_name = question[7:].strip()
+        try:
+            from sheets import get_pricing_rows
+            from pricing_engine import _find_model, COL_MODEL, COL_SALE, COL_PURCHASE
+            rows = get_pricing_rows()
+            row = _find_model(rows, model_name)
+            if row is None:
+                say(f"`{model_name}` 모델을 찾을 수 없습니다.")
+            else:
+                sale = row[COL_SALE] if len(row) > COL_SALE else "없음"
+                sale_cur = row[7] if len(row) > 7 else "없음"
+                purchase = row[COL_PURCHASE] if len(row) > COL_PURCHASE else "없음"
+                purchase_cur = row[9] if len(row) > 9 else "없음"
+                info = (
+                    f"모델: {row[COL_MODEL]}\n"
+                    f"출고가[{COL_SALE}]: {sale}\n"
+                    f"출고통화[7]: {sale_cur}\n"
+                    f"사입가[{COL_PURCHASE}]: {purchase}\n"
+                    f"사입통화[9]: {purchase_cur}\n"
+                    f"전체컬럼수: {len(row)}"
+                )
+                say(f"```\n{info}\n```")
+        except Exception as e:
+            say(f"오류: {e}")
+        return
+
     if question == "!debug":
         try:
             from sheets import get_pricing_rows
