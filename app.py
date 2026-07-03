@@ -33,7 +33,12 @@ _PRICING_KEYWORDS = (
 def _is_pricing_question(text: str) -> bool:
     """가격 조회 질문 여부 판단"""
     lower = text.lower()
-    return any(kw in lower for kw in _PRICING_KEYWORDS)
+    if any(kw in lower for kw in _PRICING_KEYWORDS):
+        return True
+    # * 포함된 모델 코드 prefix 검색 (예: SHP-P52*, ZD-R70*)
+    if '*' in text:
+        return True
+    return False
 
 
 def get_sheet_data_cached() -> str:
