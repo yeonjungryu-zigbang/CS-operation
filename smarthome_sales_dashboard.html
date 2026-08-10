@@ -17,7 +17,7 @@
 @media print{body{background:#fff}.app{max-width:none;padding:6px}.actions,.filters,.country-actions,.matrix-section{display:none!important}.panel{box-shadow:none}.kpi-grid{grid-template-columns:repeat(3,1fr)}.detail{grid-template-columns:1fr 1fr}}
 </style></head><body>
 <div class="app">
- <div class="panel header"><div class="top"><div><div class="eyebrow">ZIGBANG · SMART HOME · MONTHLY KPI</div><h1>스마트홈 월별 KPI 대시보드</h1><div class="subtitle">월별 목표 · 실적 · 달성률을 판매대수 중심으로 관리합니다 · 데이터 출처: 판매수량 base 대시보드 시트</div></div><div class="actions"><button class="btn primary" id="saveBtn">저장</button><button class="btn" id="csvBtn">CSV</button><button class="btn" onclick="window.print()">인쇄 / PDF</button><button class="btn dark" id="resetBtn">기준값 복원</button></div></div><div class="control"><div class="monthtabs" id="monthtabs"></div><div class="meta">2026 · <b id="selectedMonthLabel"></b> · 브라우저 자동 저장</div></div></div>
+ <div class="panel header"><div class="top"><div><div class="eyebrow">ZIGBANG · SMART HOME · MONTHLY KPI</div><h1>스마트홈 월별 KPI 대시보드</h1><div class="subtitle">월별 목표 · 실적 · 달성률을 판매대수 중심으로 관리합니다 · 데이터 출처: 판매수량 base 대시보드 시트</div></div><div class="actions"><button class="btn" id="liveRefreshBtn">지금 새로고침</button><button class="btn" id="liveToggle">실시간 동기화 OFF</button><button class="btn primary" id="saveBtn">저장</button><button class="btn" id="csvBtn">CSV</button><button class="btn" onclick="window.print()">인쇄 / PDF</button><button class="btn dark" id="resetBtn">기준값 복원</button></div></div><div class="control"><div class="monthtabs" id="monthtabs"></div><div class="meta">2026 · <b id="selectedMonthLabel"></b> · 브라우저 자동 저장 · <span id="liveStatus">실시간 동기화 꺼짐 (구글시트 열람 권한이 있는 zigbang.com 계정으로 로그인되어 있어야 동작합니다)</span></div></div></div>
 
  <div class="panel hero"><div class="hero-head"><div><div class="hero-title">스마트홈 주요 월별 KPI</div><div class="hero-sub">주요 영역별 목표 · 실적 · 달성률을 동일한 크기로 비교하고, 하단에서 스마트홈 매출과 공헌이익을 확인합니다.</div></div><div class="hero-badge" id="heroMonth"></div></div><div class="area-grid" id="areaGrid"></div><div class="hero-bottom" id="heroBottom"></div></div>
 
@@ -65,4 +65,118 @@ function renderMatrix(){const ids=['smarthome_revenue','ddl_off_sales','ddl_on_s
 function downloadCSV(){const rows=[['2026',months[selectedMonth],'Metric','Group','Target','Actual','Achievement']];data.forEach(k=>{const r=rate(k,selectedMonth);rows.push(['2026',months[selectedMonth],k.name,k.group,k.target[selectedMonth]??'',k.actual[selectedMonth]??'',r==null?'':(r*100).toFixed(1)+'%'])});countries.forEach(c=>{let r=rr(c.sales_target[selectedMonth],c.sales_actual[selectedMonth]);rows.push(['2026',months[selectedMonth],c.name+' 판매대수','신규국가',c.sales_target[selectedMonth]??'',c.sales_actual[selectedMonth]??'',r==null?'':(r*100).toFixed(1)+'%']);r=rr(c.revenue_target[selectedMonth],c.revenue_actual[selectedMonth]);rows.push(['2026',months[selectedMonth],c.name+' 매출','신규국가',c.revenue_target[selectedMonth]??'',c.revenue_actual[selectedMonth]??'',r==null?'':(r*100).toFixed(1)+'%'])});const csv='\uFEFF'+rows.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=`SmartHome_KPI_2026_${selectedMonth+1}월.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function render(){syncComposite();buildMonths();renderHero();renderCards();renderEditTable();renderCountries();renderChart();renderMatrix();save()}
 $('#saveBtn').onclick=()=>save(false);$('#csvBtn').onclick=downloadCSV;$('#addCountryBtn').onclick=()=>{countries.push({id:'nc'+Date.now(),name:'신규국가 '+(countries.length+1),sales_target:Array(12).fill(null),sales_actual:Array(12).fill(null),revenue_target:Array(12).fill(null),revenue_actual:Array(12).fill(null)});save();renderCountries();toast('신규국가 행을 추가했습니다.')};$('#resetBtn').onclick=()=>{if(confirm('수정한 값을 모두 지우고 기준값으로 복원할까요?')){data=structuredClone(BASE_DATA);countries=structuredClone(BASE_COUNTRIES);localStorage.removeItem(STORAGE);render();toast('기준값으로 복원했습니다.')}};render();
+
+// ─── 실시간 구글시트 동기화 (판매수량 base 대시보드, gid=1331144935) ───
+// 이 시트를 열람할 수 있는 구글 계정으로 브라우저에 로그인되어 있어야 동작합니다.
+// 목표(target)는 정적값을 유지하고, 실적(actual)만 시트에서 매달 채워지는 값을 자동으로 가져옵니다.
+const LIVE_SHEET_ID='1QR03RpGay_elaFbHo1FV7yJNJs4RmMEwn2xEnyZdIO8',LIVE_GID='1331144935';
+const LIVE_KEY='zigbang_smarthome_kpi_live_v1';
+let liveEnabled=localStorage.getItem(LIVE_KEY)==='on',liveTimer=null;
+function gvizUrl(){return `https://docs.google.com/spreadsheets/d/${LIVE_SHEET_ID}/gviz/tq?tqx=out:json&gid=${LIVE_GID}&t=${Date.now()}`}
+async function fetchLiveGrid(){
+  const res=await fetch(gvizUrl(),{credentials:'include'});
+  if(!res.ok)throw new Error('HTTP '+res.status+' (권한 또는 로그인 확인 필요)');
+  const text=await res.text();
+  const m=text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
+  if(!m)throw new Error('시트 응답을 해석할 수 없습니다 (로그인/권한 확인 필요)');
+  const json=JSON.parse(m[1]);
+  if(json.status==='error')throw new Error(json.errors?.[0]?.detailed_message||'시트 조회 오류');
+  const cols=json.table.cols.length;
+  return json.table.rows.map(row=>{const arr=new Array(cols).fill(null);(row.c||[]).forEach((cell,i)=>{if(cell)arr[i]={v:cell.v,f:cell.f}});return arr});
+}
+function liveCellText(grid,r,c){if(r<0||r>=grid.length)return '';const cell=grid[r]?.[c];if(!cell)return '';const s=cell.f!=null?cell.f:cell.v;return s==null?'':String(s).trim()}
+function liveCellNum(grid,r,c){if(r<0||r>=grid.length)return null;const cell=grid[r]?.[c];if(!cell)return null;const s=String(cell.f!=null?cell.f:cell.v).trim();if(s===''||s==='-'||s==='―'||s==='—')return null;const isPct=s.includes('%');const n=Number(s.replace(/[^0-9.\-]/g,''));if(!Number.isFinite(n))return null;return isPct?n/100:n}
+function findMonthHeader(grid){for(let r=0;r<grid.length;r++){const width=grid[r].length;for(let c=0;c<=width-12;c++){let ok=true;for(let i=0;i<12;i++){if(liveCellText(grid,r,c+i)!==String(i+1)){ok=false;break}}if(ok)return{row:r,col:c}}}return null}
+function liveRowLabel(grid,r,monthStartCol){for(let c=monthStartCol-1;c>=0;c--){const t=liveCellText(grid,r,c);if(t)return t}return ''}
+function liveRowHasText(grid,r,monthStartCol,needle){for(let c=0;c<monthStartCol;c++){if(liveCellText(grid,r,c).includes(needle))return true}return false}
+function liveMonths(grid,r,monthStartCol){return Array.from({length:12},(_,i)=>liveCellNum(grid,r,monthStartCol+i))}
+function findRowIndex(grid,monthStartCol,needle,fromRow,toRow){toRow=toRow==null?grid.length:toRow;for(let r=fromRow;r<toRow;r++){if(liveRowHasText(grid,r,monthStartCol,needle))return r}return -1}
+function findLabelAfter(grid,monthStartCol,anchorRow,labelPrefix,maxLookahead){if(anchorRow<0)return -1;maxLookahead=maxLookahead||8;for(let r=anchorRow;r<anchorRow+maxLookahead&&r<grid.length;r++){if(liveRowLabel(grid,r,monthStartCol).startsWith(labelPrefix))return r}return -1}
+function extractLive(grid){
+  const header=findMonthHeader(grid);
+  if(!header)throw new Error('시트에서 월별(1~12) 헤더를 찾지 못했습니다');
+  const c0=header.col;
+  const anchorAll=findRowIndex(grid,c0,'판매대수 기반',0);
+  const from0=anchorAll>=0?anchorAll:0;
+  const result={};
+  const setActual=(id,row)=>{if(row>=0){const vals=liveMonths(grid,row,c0);if(vals.some(v=>v!=null))result[id]=vals}};
+  let a=findRowIndex(grid,c0,'매출 (Total)',from0);if(a<0)a=findRowIndex(grid,c0,'매출',from0);
+  setActual('smarthome_revenue',findLabelAfter(grid,c0,a,'실적'));
+  const b=findRowIndex(grid,c0,'수주',from0);
+  setActual('b2b_orders',findLabelAfter(grid,c0,b,'실적'));
+  const domesticStart=findRowIndex(grid,c0,'국내',from0);
+  const ddlStart=findRowIndex(grid,c0,'DDL',domesticStart>=0?domesticStart:from0);
+  const hnStart=findRowIndex(grid,c0,'HN',ddlStart>=0?ddlStart:from0);
+  const overseasStart=findRowIndex(grid,c0,'해외',hnStart>=0?hnStart:from0);
+  if(domesticStart>=0){
+    const boundEnd=ddlStart>=0?ddlStart:(hnStart>=0?hnStart:grid.length);
+    let r=findRowIndex(grid,c0,'B2C_오프라인',domesticStart,boundEnd);
+    setActual('ddl_off_revenue',findLabelAfter(grid,c0,r,'실적'));
+    r=findRowIndex(grid,c0,'B2C_온라인',domesticStart,boundEnd);
+    setActual('ddl_on_revenue',findLabelAfter(grid,c0,r,'실적'));
+  }
+  if(ddlStart>=0){
+    const boundEnd=hnStart>=0?hnStart:grid.length;
+    const offStart=findRowIndex(grid,c0,'오프라인',ddlStart,boundEnd);
+    const onStart=findRowIndex(grid,c0,'온라인',offStart>=0?offStart:ddlStart,boundEnd);
+    if(offStart>=0){
+      const offEnd=onStart>=0?onStart:boundEnd;
+      let r=findRowIndex(grid,c0,'M/S',offStart,offEnd);
+      setActual('ddl_off_ms',findLabelAfter(grid,c0,r,'실적'));
+      r=findRowIndex(grid,c0,'판매비중',offStart,offEnd);
+      setActual('ddl_off_wifi_mix',findLabelAfter(grid,c0,r,'실적'));
+      r=findRowIndex(grid,c0,'Total',offStart,offEnd);
+      setActual('ddl_off_sales',findLabelAfter(grid,c0,r,'실적'));
+    }
+    if(onStart>=0){
+      let r=findRowIndex(grid,c0,'M/S',onStart,boundEnd);
+      setActual('ddl_on_ms',findLabelAfter(grid,c0,r,'실적'));
+      r=findRowIndex(grid,c0,'Total',onStart,boundEnd);
+      setActual('ddl_on_sales',findLabelAfter(grid,c0,r,'실적'));
+      r=findRowIndex(grid,c0,'Wi-Fi',onStart,boundEnd);
+      setActual('ddl_on_wifi',findLabelAfter(grid,c0,r,'실적'));
+    }
+  }
+  if(hnStart>=0){
+    const boundEnd=overseasStart>=0?overseasStart:grid.length;
+    let r=findRowIndex(grid,c0,'B2C',hnStart,boundEnd);
+    setActual('hn_b2c_revenue',findLabelAfter(grid,c0,r,'실적'));
+    r=findRowIndex(grid,c0,'VDP',hnStart,boundEnd);
+    setActual('hn_b2c_units',findLabelAfter(grid,c0,r,'실적'));
+  }
+  if(overseasStart>=0){
+    const vals=liveMonths(grid,overseasStart,c0);
+    if(vals.some(v=>v!=null))result['overseas_revenue']=vals;
+  }
+  return result;
+}
+async function syncLive(silent){
+  const badge=$('#liveStatus');
+  try{
+    if(badge)badge.textContent='동기화 중…';
+    const grid=await fetchLiveGrid();
+    const live=extractLive(grid);
+    const ids=Object.keys(live);
+    ids.forEach(id=>{const k=find(id);if(k)k.actual=live[id]});
+    syncComposite();save();render();
+    const ts=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    if(badge)badge.textContent=`마지막 동기화 ${ts} · ${ids.length}개 항목 반영`;
+    if(!silent)toast('구글시트에서 최신 실적을 불러왔습니다.');
+  }catch(e){
+    console.error(e);
+    if(badge)badge.textContent='동기화 실패 (시트 로그인/열람 권한 확인) · 정적값 유지';
+    if(!silent)toast('실시간 동기화 실패: '+e.message);
+  }
+}
+function setLiveEnabled(on){
+  liveEnabled=on;localStorage.setItem(LIVE_KEY,on?'on':'off');
+  const btn=$('#liveToggle');
+  if(btn){btn.classList.toggle('primary',on);btn.textContent=on?'실시간 동기화 ON':'실시간 동기화 OFF'}
+  if(liveTimer){clearInterval(liveTimer);liveTimer=null}
+  if(on){syncLive(true);liveTimer=setInterval(()=>syncLive(true),5*60*1000)}
+  else{const badge=$('#liveStatus');if(badge)badge.textContent='실시간 동기화 꺼짐 (구글시트 열람 권한이 있는 zigbang.com 계정으로 로그인되어 있어야 동작합니다)'}
+}
+$('#liveToggle').onclick=()=>setLiveEnabled(!liveEnabled);
+$('#liveRefreshBtn').onclick=()=>syncLive(false);
+setLiveEnabled(liveEnabled);
 </script></body></html>
