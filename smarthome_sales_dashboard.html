@@ -71,18 +71,29 @@ $('#saveBtn').onclick=()=>save(false);$('#csvBtn').onclick=downloadCSV;$('#addCo
 // 목표(target)는 정적값을 유지하고, 실적(actual)만 시트에서 매달 채워지는 값을 자동으로 가져옵니다.
 const LIVE_SHEET_ID='1QR03RpGay_elaFbHo1FV7yJNJs4RmMEwn2xEnyZdIO8',LIVE_GID='1331144935';
 const LIVE_KEY='zigbang_smarthome_kpi_live_v1';
-let liveEnabled=localStorage.getItem(LIVE_KEY)==='on',liveTimer=null;
-function gvizUrl(){return `https://docs.google.com/spreadsheets/d/${LIVE_SHEET_ID}/gviz/tq?tqx=out:json&gid=${LIVE_GID}&t=${Date.now()}`}
-async function fetchLiveGrid(){
-  const res=await fetch(gvizUrl(),{credentials:'include'});
-  if(!res.ok)throw new Error('HTTP '+res.status+' (권한 또는 로그인 확인 필요)');
-  const text=await res.text();
-  const m=text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
-  if(!m)throw new Error('시트 응답을 해석할 수 없습니다 (로그인/권한 확인 필요)');
-  const json=JSON.parse(m[1]);
-  if(json.status==='error')throw new Error(json.errors?.[0]?.detailed_message||'시트 조회 오류');
-  const cols=json.table.cols.length;
-  return json.table.rows.map(row=>{const arr=new Array(cols).fill(null);(row.c||[]).forEach((cell,i)=>{if(cell)arr[i]={v:cell.v,f:cell.f}});return arr});
+let liveEnabled=localStorage.getItem(LIVE_KEY)==='on',liveTimer=null,liveJsonpSeq=0;
+// fetch()는 gviz 응답에 CORS 허용 헤더가 없어 브라우저가 읽기를 차단합니다.
+// 구글이 공식 지원하는 <script> 태그 + responseHandler(JSONP) 방식으로 우회합니다.
+function fetchLiveGrid(){
+  return new Promise((resolve,reject)=>{
+    const cbName='__liveGvizCb'+(liveJsonpSeq++);
+    let done=false;
+    const script=document.createElement('script');
+    const timeout=setTimeout(()=>{if(!done){done=true;cleanup();reject(new Error('응답 시간 초과 (로그인/권한 확인 필요)'))}},15000);
+    function cleanup(){clearTimeout(timeout);delete window[cbName];if(script.parentNode)script.parentNode.removeChild(script)}
+    window[cbName]=(json)=>{
+      if(done)return;done=true;
+      try{
+        if(json.status==='error'){cleanup();reject(new Error(json.errors?.[0]?.detailed_message||'시트 조회 오류'));return}
+        const cols=json.table.cols.length;
+        const rows=json.table.rows.map(row=>{const arr=new Array(cols).fill(null);(row.c||[]).forEach((cell,i)=>{if(cell)arr[i]={v:cell.v,f:cell.f}});return arr});
+        cleanup();resolve(rows);
+      }catch(e){cleanup();reject(e)}
+    };
+    script.src=`https://docs.google.com/spreadsheets/d/${LIVE_SHEET_ID}/gviz/tq?gid=${LIVE_GID}&tqx=out:json;responseHandler:${cbName}&t=${Date.now()}`;
+    script.onerror=()=>{if(!done){done=true;cleanup();reject(new Error('스크립트 로드 실패 (로그인/권한 확인 필요)'))}};
+    document.head.appendChild(script);
+  });
 }
 function liveCellText(grid,r,c){if(r<0||r>=grid.length)return '';const cell=grid[r]?.[c];if(!cell)return '';const s=cell.f!=null?cell.f:cell.v;return s==null?'':String(s).trim()}
 function liveCellNum(grid,r,c){if(r<0||r>=grid.length)return null;const cell=grid[r]?.[c];if(!cell)return null;const s=String(cell.f!=null?cell.f:cell.v).trim();if(s===''||s==='-'||s==='―'||s==='—')return null;const isPct=s.includes('%');const n=Number(s.replace(/[^0-9.\-]/g,''));if(!Number.isFinite(n))return null;return isPct?n/100:n}
